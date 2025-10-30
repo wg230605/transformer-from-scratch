@@ -10,22 +10,15 @@ import json
 import matplotlib.pyplot as plt
 
 # 从 src 目录导入我们的模块
-from src.model import EncoderModel
-from src.data_loader import get_dataloaders, PAD_TOKEN
+from src.model import TransformerModel
+from src.data_loader import get_dataloaders as get_translation_dataloaders, PAD_TOKEN
 
 # ---------------------------------
 # 1. 从 JSON 文件加载配置
 # ---------------------------------
-# 获取当前脚本 (train.py) 的绝对路径
 script_path = os.path.abspath(__file__)
-
-# 获取 train.py 所在的目录 (即 src/ 目录)
 script_dir = os.path.dirname(script_path)
-
-# 获取项目根目录 (即 src/ 目录的上一级)
 root_dir = os.path.dirname(script_dir)
-
-# 构造 config.json 的绝对路径
 CONFIG_FILE = os.path.join(root_dir, "configs", "config.json")
 
 try:
@@ -38,21 +31,13 @@ except FileNotFoundError:
 
 
 # ---------------------------------
-# 2. 绘图函数
+# 2. 绘图函数 (保留不变)
 # ---------------------------------
 def plot_history(history, save_dir):
-    """
-    绘制训练和验证曲线并保存
-    """
     print("正在生成训练曲线图...")
-
-    # 确保 save_dir 存在
     os.makedirs(save_dir, exist_ok=True)
-
-    # 1. 创建图表 (Loss vs. Val Loss)
     plt.figure(figsize=(12, 5))
 
-    # 第一个子图: 损失
     plt.subplot(1, 2, 1)
     plt.plot(history['train_loss'], label='Train Loss')
     plt.plot(history['val_loss'], label='Validation Loss')
@@ -62,7 +47,6 @@ def plot_history(history, save_dir):
     plt.legend()
     plt.grid(True)
 
-    # 第二个子图: 困惑度
     plt.subplot(1, 2, 2)
     plt.plot(history['perplexity'], label='Validation Perplexity')
     plt.title('Validation Perplexity')
@@ -71,7 +55,6 @@ def plot_history(history, save_dir):
     plt.legend()
     plt.grid(True)
 
-    # 调整布局并保存
     plt.tight_layout()
     save_path = os.path.join(save_dir, "training_curves.png")
     plt.savefig(save_path)
@@ -80,31 +63,49 @@ def plot_history(history, save_dir):
 
 
 # ---------------------------------
-# 3. 训练和评估函数 (与之前相同)
+# 3. 训练和评估函数
 # ---------------------------------
 
 def train_epoch(model, loader, criterion, optimizer, device):
     """
-    执行一个训练 epoch
+    执行一个训练 epoch (用于 Seq2Seq)
     """
-    model.train()  # 切换到训练模式
+    model.train()
     total_loss = 0
-
     progress_bar = tqdm(loader, desc="Training", leave=False)
 
-    for src, tgt, src_mask in progress_bar:
+    for src, tgt, src_mask, tgt_mask in progress_bar:
+        # 1. 将数据移动到设备
         src = src.to(device)
         tgt = tgt.to(device)
         src_mask = src_mask.to(device)
+        tgt_mask = tgt_mask.to(device)
 
+        # 2. 准备 Teacher Forcing
+        # (a) Decoder 的输入: [SOS, w1, w2, ...]
+        tgt_input = tgt[:, :-1]
+
+        # (b) Decoder 的目标: [w1, w2, ..., EOS]
+        tgt_output = tgt[:, 1:]
+
+        # (c) 调整 Decoder 掩码以匹配 tgt_input
+        tgt_mask = tgt_mask[:, :, :-1, :-1]
+
+        # 3. 梯度清零
         optimizer.zero_grad()
-        outputs = model(src, src_mask)
 
+        # 4. 前向传播
+        outputs = model(src, tgt_input, src_mask, tgt_mask)
+
+        # 5. 计算损失
+        # outputs 形状: (batch, seq_len-1, vocab_size)
+        # tgt_output 形状: (batch, seq_len-1)
         loss = criterion(
-            outputs.view(-1, outputs.size(-1)),
-            tgt.view(-1)
+            outputs.contiguous().view(-1, outputs.size(-1)),  # (batch*(seq_len-1), vocab_size)
+            tgt_output.contiguous().view(-1)  # (batch*(seq_len-1))
         )
 
+        # 6. 反向传播
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -117,23 +118,31 @@ def train_epoch(model, loader, criterion, optimizer, device):
 
 def evaluate(model, loader, criterion, device):
     """
-    执行评估
+    执行评估 (用于 Seq2Seq)
     """
-    model.eval()  # 切换到评估模式
+    model.eval()
     total_loss = 0
 
     with torch.no_grad():
         progress_bar = tqdm(loader, desc="Evaluating", leave=False)
-        for src, tgt, src_mask in progress_bar:
+        for src, tgt, src_mask, tgt_mask in progress_bar:
             src = src.to(device)
             tgt = tgt.to(device)
             src_mask = src_mask.to(device)
+            tgt_mask = tgt_mask.to(device)
 
-            outputs = model(src, src_mask)
+            # (a) Decoder 的输入: [SOS, w1, w2, ...]
+            tgt_input = tgt[:, :-1]
+            # (b) Decoder 的目标: [w1, w2, ..., EOS]
+            tgt_output = tgt[:, 1:]
+            # (c) 调整 Decoder 掩码以匹配 tgt_input
+            tgt_mask = tgt_mask[:, :, :-1, :-1]
+
+            outputs = model(src, tgt_input, src_mask, tgt_mask)
 
             loss = criterion(
-                outputs.view(-1, outputs.size(-1)),
-                tgt.view(-1)
+                outputs.contiguous().view(-1, outputs.size(-1)),
+                tgt_output.contiguous().view(-1)
             )
 
             total_loss += loss.item()
@@ -141,15 +150,15 @@ def evaluate(model, loader, criterion, device):
 
     avg_loss = total_loss / len(loader)
     try:
-        perplexity = math.exp(avg_loss)  # 困惑度 PPL
+        perplexity = math.exp(avg_loss)
     except OverflowError:
-        perplexity = float('inf')  # 防止 loss 过大导致 exp 溢出
+        perplexity = float('inf')
 
     return avg_loss, perplexity
 
 
 # ---------------------------------
-# 4. 主训练循环
+# 4. 主训练循环 (已修改)
 # ---------------------------------
 
 def main():
@@ -159,14 +168,12 @@ def main():
         device = "cpu"
     elif device.startswith("cuda"):
         try:
-            # 尝试访问指定的 GPU
             torch.cuda.get_device_name(device)
             print(f"成功找到并使用设备: {device}")
         except (RuntimeError, AssertionError):
             print(f"警告: 无法找到设备 {device}。回退到 cuda:0。")
             device = "cuda:0"
             try:
-                # 尝试访问 cuda:0
                 torch.cuda.get_device_name(device)
             except (RuntimeError, AssertionError):
                 print(f"错误: 无法找到任何 CUDA 设备。强制使用 CPU。")
@@ -175,36 +182,34 @@ def main():
         print(f"警告: 配置的设备不是 'cuda:X'。强制使用 CPU。")
         device = "cpu"
 
-    CONFIG["device"] = device  # 将最终确定的设备存回 CONFIG
-
+    CONFIG["device"] = device
     torch.manual_seed(CONFIG["seed"])
     if device.startswith("cuda"):
         torch.cuda.manual_seed(CONFIG["seed"])
 
     print(f"最终使用设备: {device}")
 
-    # 构造指向项目根目录的绝对路径
     checkpoint_dir_path = os.path.join(root_dir, "checkpoints")
     results_dir_path = os.path.join(root_dir, "results")
 
     print(f"检查点将保存到: {checkpoint_dir_path}")
     print(f"结果将保存到: {results_dir_path}")
 
-    # 1. 创建目录
-    os.makedirs(checkpoint_dir_path, exist_ok=True)  # <-- 新代码
-    os.makedirs(results_dir_path, exist_ok=True)  # <-- 新代码
+    os.makedirs(checkpoint_dir_path, exist_ok=True)
+    os.makedirs(results_dir_path, exist_ok=True)
 
-    # 2. 加载数据
-    train_loader, val_loader, vocab_size, pad_id = get_dataloaders(
+    # 2. 加载数据 (调用新的函数)
+    train_loader, val_loader, vocab_size, pad_id = get_translation_dataloaders(
         batch_size=CONFIG["batch_size"],
         max_seq_len=CONFIG["max_seq_len"],
         vocab_size=CONFIG["vocab_size"]
+        # 语言对默认为 en-de, 可以在此指定
     )
     CONFIG["vocab_size"] = vocab_size
     print(f"真实词汇表大小: {vocab_size}, PAD ID: {pad_id}")
 
-    # 3. 实例化模型
-    model = EncoderModel(
+    # 3. 实例化模型 (实例化新的模型)
+    model = TransformerModel(
         vocab_size=vocab_size,
         d_model=CONFIG["d_model"],
         N=CONFIG["N"],
@@ -218,7 +223,7 @@ def main():
     print(f"模型总参数量: {total_params:,}")
 
     # 4. 定义损失函数和优化器
-    criterion = nn.CrossEntropyLoss(ignore_index=pad_id)
+    criterion = nn.CrossEntropyLoss(ignore_index=pad_id)  # 忽略 PAD 标记
     optimizer = optim.AdamW(model.parameters(), lr=CONFIG["lr"])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 'min', patience=1, factor=0.5, verbose=True
@@ -236,7 +241,13 @@ def main():
         epoch_start_time = time.time()
 
         train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, perplexity = evaluate(model, val_loader, criterion, device)
+
+        # 检查验证集加载器是否存在
+        if val_loader:
+            val_loss, perplexity = evaluate(model, val_loader, criterion, device)
+        else:
+            print("警告: 找不到验证集加载器, 跳过评估。")
+            val_loss, perplexity = train_loss, math.exp(train_loss)  # 使用训练损失作为替代
 
         epoch_time = time.time() - epoch_start_time
 
@@ -255,7 +266,7 @@ def main():
         # 6. 保存模型
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            model_path = os.path.join(checkpoint_dir_path, "best_model.pt")
+            model_path = os.path.join(checkpoint_dir_path, "best_model_translation.pt")
             torch.save(model.state_dict(), model_path)
             print(f"验证损失改善, 模型已保存到: {model_path}")
             patience_counter = 0
@@ -272,14 +283,12 @@ def main():
     print(f"\n训练完成. 总耗时: {total_time:.2f}s")
 
     # 7. 保存训练历史和配置
-    # history_path = os.path.join(CONFIG["results_dir"], "training_history.json") # <-- 旧代码
-    history_path = os.path.join(results_dir_path, "training_history.json")  # <-- 新代码
+    history_path = os.path.join(results_dir_path, "training_history_translation.json")
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=2)
     print(f"训练历史已保存到: {history_path}")
 
-    # config_path = os.path.join(CONFIG["results_dir"], "config.json") # <-- 旧代码
-    config_path = os.path.join(results_dir_path, "config.json")  # <-- 新代码
+    config_path = os.path.join(results_dir_path, "config_translation.json")
     with open(config_path, 'w') as f:
         json.dump(CONFIG, f, indent=2)
     print(f"配置已保存到: {config_path}")
