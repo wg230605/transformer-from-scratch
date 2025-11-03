@@ -300,7 +300,7 @@ class TransformerModel(nn.Module):
         编码源序列
         """
         x = self.src_embed(src) * math.sqrt(self.d_model)
-        x = self.pos_enc(x)
+        # x = self.pos_enc(x)
         return self.encoder(x, src_mask)
 
     def decode(self, tgt, memory, src_mask, tgt_mask):
@@ -308,7 +308,7 @@ class TransformerModel(nn.Module):
         解码目标序列
         """
         x = self.tgt_embed(tgt) * math.sqrt(self.d_model)
-        x = self.pos_enc(x)
+        # x = self.pos_enc(x)
         return self.decoder(x, memory, src_mask, tgt_mask)
 
     def forward(self, src, tgt, src_mask, tgt_mask):

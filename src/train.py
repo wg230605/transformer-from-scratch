@@ -189,8 +189,13 @@ def main():
 
     print(f"最终使用设备: {device}")
 
+    # 1. 创建保存目录(正常情况）
+    # checkpoint_dir_path = os.path.join(root_dir, "checkpoints")
+    # results_dir_path = os.path.join(root_dir, "results")
+
+    # 1. 创建保存目录(消融实验，去掉位置编码）
     checkpoint_dir_path = os.path.join(root_dir, "checkpoints")
-    results_dir_path = os.path.join(root_dir, "results")
+    results_dir_path = os.path.join(root_dir, "results/results_no_pe")
 
     print(f"检查点将保存到: {checkpoint_dir_path}")
     print(f"结果将保存到: {results_dir_path}")
@@ -266,7 +271,8 @@ def main():
         # 6. 保存模型
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            model_path = os.path.join(checkpoint_dir_path, "best_model_translation.pt")
+            # model_path = os.path.join(checkpoint_dir_path, "best_model_translation.pt")
+            model_path = os.path.join(checkpoint_dir_path, "best_model_translation_no_pe.pt")  # 消融实验（去掉位置编码）
             torch.save(model.state_dict(), model_path)
             print(f"验证损失改善, 模型已保存到: {model_path}")
             patience_counter = 0
@@ -283,12 +289,14 @@ def main():
     print(f"\n训练完成. 总耗时: {total_time:.2f}s")
 
     # 7. 保存训练历史和配置
-    history_path = os.path.join(results_dir_path, "training_history_translation.json")
+    # history_path = os.path.join(results_dir_path, "training_history_translation.json")
+
+    history_path = os.path.join(results_dir_path, "training_history_translation_no_pe.json") # 消融实验（去掉位置编码）
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=2)
     print(f"训练历史已保存到: {history_path}")
 
-    config_path = os.path.join(results_dir_path, "config_translation.json")
+    config_path = os.path.join(results_dir_path, "config_translation_no_pe.json")
     with open(config_path, 'w') as f:
         json.dump(CONFIG, f, indent=2)
     print(f"配置已保存到: {config_path}")
