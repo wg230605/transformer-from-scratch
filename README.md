@@ -1,6 +1,6 @@
 # 从零实现 Transformer (Encoder-Decoder)
 
-本项目是《大模型基础与应用》课程的期中作业。它从零开始，仅使用 PyTorch 和 NumPy，手动实现了一个完整的 **Encoder-Decoder Transformer** 架构。
+本项目是《大模型基础与应用》课程的期中作业。我们从零开始，仅使用 PyTorch 和 NumPy，手动实现了一个完整的 **Encoder-Decoder Transformer** 架构。
 
 为了验证模型的有效性，我们在 **IWSLT 2017 (EN-DE)** 数据集上训练了一个英语到德语的机器翻译任务，并成功复现了模型的收敛过程。
 
@@ -14,7 +14,7 @@
     cd transformer-from-scratch
     ```
 
-2.  **(可选) 创建 Conda 环境**
+2.  **创建 Conda 环境**
     ```bash
     conda create -n py39 python=3.9
     conda activate py39
@@ -55,15 +55,15 @@
 
 ## 3. 如何运行 (Exact Command Line)
 
-作业要求提供**可复现的精确命令行**。本项目的所有超参数（包括随机种子 `seed: 42`）均已在 `configs/config.json` 文件中定义。
+本项目的所有超参数（包括随机种子 `seed: 42`）均已在 `configs/config.json` 文件中定义。
 
-**重要提示**：必须在**项目根目录** (`transformer-from-scratch/`)下运行以下命令，才能确保 Python 正确找到 `src` 模块。
+必须在**项目根目录** (`transformer-from-scratch/`)下运行以下命令，才能确保 Python 正确找到 `src` 模块。
 
 ### A. 复现主实验
 
 1.  **检查模型代码**: 确保 `src/model.py` 中 `encode` 和 `decode` 方法内的 `self.pos_enc(x)` **没有**被注释。
 
-2.  **检查训练脚本**: 打开 `src/train.py`，定位到 `main()` 函数中的“创建保存目录”部分 (约 200 行)。确保**主实验**的路径是**激活**的（未被注释），而消融实验的路径是**被注释**的：
+2.  **检查训练脚本**: 打开 `src/train.py`，定位到 `main()` 函数中的“创建保存目录”部分。确保**主实验**的路径是**激活**的（未被注释），而消融实验的路径是**被注释**的：
     ```python
     # 1. 创建保存目录(正常情况）
     checkpoint_dir_path = os.path.join(root_dir, "checkpoints")
@@ -86,7 +86,7 @@
     ```bash
     python -m src.train
     ```
-    *（我们使用 `python -m src.train` 而不是 `python src/train.py`，这是为了让 Python 将根目录添加到搜索路径，从而正确执行 `from src.model ...` 导入。）*
+    *（使用 `python -m src.train` 而不是 `python src/train.py`，这是为了让 Python 将根目录添加到搜索路径，从而正确执行 `from src.model ...` 导入。）*
 
 4.  **查看结果**: 训练曲线图将保存在 `results/training_curves.png`。
 
